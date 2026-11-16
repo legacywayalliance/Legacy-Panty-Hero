@@ -1,0 +1,53 @@
+name: Build Signed Play Store AAB
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-aab:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Package Web Files into Capacitor Android App
+        run: |
+          mkdir -p www
+          cp -r *.html *.css *.js *.svg *.png *.jpg *.jpeg *.json assets images 2>/dev/null || true
+          mv *.html *.css *.js *.svg *.png *.jpg *.jpeg *.json assets images www/ 2>/dev/null || true
+          
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npx cap init "Legacy Pantry Hero" "com.legacywayalliance.pantryhero" --web-dir="www"
+          npx cap add android
+          npx cap sync android
+
+      - name: Generate Release Keystore
+        run: |
+          keytool -genkey -v -keystore release.keystore -alias pantryhero -keyalg RSA -keysize 2048 -validity 10000 -storepass LegacyPantry2026 -keypass LegacyPantry2026 -dname "CN=Legacy Way Alliance, OU=App, O=Legacy Way Alliance, L=Alexandria, S=LA, C=US"
+
+      - name: Build and Sign Android AAB
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew bundleRelease
+          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 -keystore ../release.keystore -storepass LegacyPantry2026 -keypass LegacyPantry2026 app/build/outputs/bundle/release/app-release.aab pantryhero
+
+      - name: Upload Signed AAB and Keystore
+        uses: actions/upload-artifact@v4
+        with:
+          name: play-store-release-files
+          path: |
+            android/app/build/outputs/bundle/release/app-release.aab
+            release.keystore
